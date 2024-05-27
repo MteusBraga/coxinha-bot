@@ -1,7 +1,8 @@
 import { config } from 'dotenv';
 import { Client, GatewayIntentBits } from 'discord.js';
-import { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType, NoSubscriberBehavior } from '@discordjs/voice';
-import play from 'play-dl'
+import { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, NoSubscriberBehavior } from '@discordjs/voice';
+import play from 'play-dl';
+
 config();
 
 const client = new Client({
@@ -13,22 +14,20 @@ const client = new Client({
   ]
 });
 
-
-
 // Define a queue to hold the songs
 const queue = new Map();
 
 client.on('messageCreate', async message => {
   try {
-    if(message.content.startsWith("!help")){
+    if (message.content.startsWith('!help')) {
       message.reply(`
       Comandos: 
       !play <link(youtube)> 
       !skip 
       !queue
-      `)
+      `);
     }
-    
+
     if (message.content.startsWith('!play')) {
       if (!message.member.voice?.channel) return message.reply('Conecte-se a um canal de voz!');
 
@@ -38,21 +37,22 @@ client.on('messageCreate', async message => {
         adapterCreator: message.guild.voiceAdapterCreator
       });
 
-      let args = message.content.split('play ')[1].split(' ')[0];
-      console.log(args);
-      let stream = await play.stream(args);
+      const args = message.content.split(' ')[1];
+      if (!args) {
+        return message.reply('Por favor, forneça um link do YouTube.');
+      }
 
-      let resource = createAudioResource(stream.stream, {
+      const stream = await play.stream(args);
+
+      const resource = createAudioResource(stream.stream, {
         inputType: stream.type
       });
 
-      let player = createAudioPlayer({
+      const player = createAudioPlayer({
         behaviors: {
           noSubscriber: NoSubscriberBehavior.Play
         }
       });
-
-      player.play(resource);
 
       // Check if there's already a queue for this guild
       if (!queue.has(message.guild.id)) {
@@ -67,10 +67,15 @@ client.on('messageCreate', async message => {
         player.on('stateChange', (_, newState) => {
           if (newState.status === AudioPlayerStatus.Idle) {
             const guildQueue = queue.get(message.guild.id);
-            guildQueue.songs.shift(); // Remove the first song (current song) from the queue
-            if (guildQueue.songs.length > 0) {
-              const nextSong = guildQueue.songs[0];
-              playSong(nextSong, message.guild.id); // Play the next song in the queue
+            if (guildQueue && guildQueue.songs.length > 0) {
+              guildQueue.songs.shift(); // Remove the first song (current song) from the queue
+              if (guildQueue.songs.length > 0) {
+                const nextSong = guildQueue.songs[0];
+                playSong(nextSong, message.guild.id); // Play the next song in the queue
+              } else {
+                guildQueue.connection.destroy();
+                queue.delete(message.guild.id);
+              }
             }
           }
         });
@@ -81,29 +86,29 @@ client.on('messageCreate', async message => {
       guildQueue.songs.push({ args, message }); // Store the song details in the queue
       if (guildQueue.songs.length === 1) {
         playSong(guildQueue.songs[0], message.guild.id); // If this is the first song in the queue, play it immediately
+      } else {
+        message.channel.send(`Adicionado à fila: ${args}`);
       }
     }
 
-    
     if (message.content.startsWith('!skip')) {
       const guildQueue = queue.get(message.guild.id);
       if (!guildQueue) return message.reply('Não há músicas na fila para pular.');
-
+      console.log(guildQueue)
       guildQueue.player.stop(); // Para a música atual
-      guildQueue.songs.shift(); // Remove a música atual da fila
 
-      if (guildQueue.songs.length > 0) {
+      if (guildQueue.songs.length > 1) {
+        guildQueue.songs.shift(); // Remove a música atual da fila
         const nextSong = guildQueue.songs[0];
         playSong(nextSong, message.guild.id); // Toca a próxima música na fila
+        message.channel.send('Música pulada.');
       } else {
         // Se não houver mais músicas na fila, limpe a fila e desconecte o bot do canal de voz
         guildQueue.connection.destroy();
         queue.delete(message.guild.id);
+        message.channel.send('Música pulada. Não há mais músicas na fila.');
       }
-
-      message.channel.send('Música pulada.');
     }
-
 
     if (message.content.startsWith('!queue')) {
       const guildQueue = queue.get(message.guild.id);
@@ -118,7 +123,6 @@ client.on('messageCreate', async message => {
 
       message.channel.send(queueList);
     }
-
 
     if (message.content.startsWith('!stop')) {
       const guildQueue = queue.get(message.guild.id);
@@ -135,21 +139,28 @@ client.on('messageCreate', async message => {
     }
   } catch (e) {
     console.error(e);
+    message.channel.send('Ocorreu um erro ao processar o comando.');
   }
 });
 
 // Function to play a song
 async function playSong(song, guildId) {
   const guildQueue = queue.get(guildId);
-  let stream = await play.stream(song.args);
-  let resource = createAudioResource(stream.stream, {
-    inputType: stream.type
-  });
-  guildQueue.player.play(resource);
-  guildQueue.connection.subscribe(guildQueue.player);
-  song.message.channel.send(`Tocando agora: ${song.args}`);
-}
+  if (!guildQueue) return;
 
+  try {
+    const stream = await play.stream(song.args);
+    const resource = createAudioResource(stream.stream, {
+      inputType: stream.type
+    });
+    guildQueue.player.play(resource);
+    guildQueue.connection.subscribe(guildQueue.player);
+    song.message.channel.send(`Tocando agora: ${song.args}`);
+  } catch (error) {
+    console.error('Erro ao tocar a música:', error);
+    song.message.channel.send('Ocorreu um erro ao tentar tocar a música.');
+  }
+}
 
 client.on('ready', () => {
   console.log(`Logged in as ${client.user.tag}!`);

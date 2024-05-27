@@ -1,3 +1,7 @@
-bot_invite = https://discord.com/oauth2/authorize?client_id=1126207872859123835&permissions=8&scope=bot
+Este é um projeto de um Bot para Discord
+O Coxinha Bot é capaz de reproduzir audio de músicas e/ou vídeos do Youtube 
 
-id_channel = 1241118886804455647
+Mudanças a serem feitas: 
+[] Tocar playlist
+[] Conectar-se a canais dinamicamente
+[] Rodar em servidor
